@@ -19,7 +19,7 @@ MAKE = $(CC) $(INC)
 # Object files needed by modules
 MEM_OBJ = $(addprefix $(OBJ)/, paging.o mem.o cpu.o loader.o)
 OS_OBJ = $(addprefix $(OBJ)/, cpu.o mem.o loader.o queue.o os.o sched.o timer.o mm-vm.o mm.o mm-memphy.o)
-SCHED_OBJ = $(addprefix $(OBJ)/, cpu.o loader.o)
+SCHED_OBJ = $(addprefix $(OBJ)/, cpu.o loader.o os.o timer.o queue.o sched.o mem.o)
 HEADER = $(wildcard $(INCLUDE)/*.h)
 
 all: os

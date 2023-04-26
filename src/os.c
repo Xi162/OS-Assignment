@@ -4,6 +4,7 @@
 #include "sched.h"
 #include "loader.h"
 #include "mm.h"
+//#include "os-cfg.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -55,9 +56,10 @@ static void * cpu_routine(void * args) {
 		 	* ready queue */
 			proc = get_proc();
 			if (proc == NULL) {
-                           next_slot(timer_id);
-                           continue; /* First load failed. skip dummy load */
-                        }
+				//printf("Hello\n");
+                next_slot(timer_id);
+                continue; /* First load failed. skip dummy load */
+            }
 		}else if (proc->pc == proc->code->size) {
 			/* The porcess has finish it job */
 			printf("\tCPU %d: Processed %2d has finished\n",
@@ -90,6 +92,7 @@ static void * cpu_routine(void * args) {
 		}
 		
 		/* Run current process */
+		printf("\tProcess %d run\n", proc->pid);
 		run(proc);
 		time_left--;
 		next_slot(timer_id);
