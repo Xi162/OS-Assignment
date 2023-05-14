@@ -1,7 +1,7 @@
 
 #include "queue.h"
 #include "sched.h"
-//#include "os-cfg.h"
+#include "os-cfg.h"
 #include <pthread.h>
 
 #include <stdlib.h>
@@ -9,7 +9,7 @@
 static struct queue_t ready_queue;
 static struct queue_t run_queue;
 static pthread_mutex_t queue_lock;
-static uint32_t remain_slot[MAX_PRIO];
+static int remain_slot[MAX_PRIO];
 
 #ifdef MLQ_SCHED
 static struct queue_t mlq_ready_queue[MAX_PRIO];

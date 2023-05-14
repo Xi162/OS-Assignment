@@ -61,7 +61,6 @@ int run(struct pcb_t * proc) {
 	case ALLOC:
 #ifdef MM_PAGING
 		stat = pgalloc(proc, ins.arg_0, ins.arg_1);
-
 #else
 		stat = alloc(proc, ins.arg_0, ins.arg_1);
 #endif

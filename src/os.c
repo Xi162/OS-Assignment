@@ -4,7 +4,7 @@
 #include "sched.h"
 #include "loader.h"
 #include "mm.h"
-//#include "os-cfg.h"
+#include "os-cfg.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -64,13 +64,22 @@ static void * cpu_routine(void * args) {
 			/* The porcess has finish it job */
 			printf("\tCPU %d: Processed %2d has finished\n",
 				id ,proc->pid);
+			decrease_degree_of_multiprogramming(proc);
+#ifdef MM_PAGING
+			free_pcb_memph(proc);
+#endif
 			free(proc);
 			proc = get_proc();
 			time_left = 0;
 		}else if (time_left == 0) {
 			/* The process has done its job in current time slot */
+ #ifdef MM_PAGING
+ 			swap_pcb_memph(proc);
+ #endif
+ 			//print_pgtbl(proc, proc->mm->mmap->vm_start, proc->mm->mmap->vm_end);
 			printf("\tCPU %d: Put process %2d to run queue\n",
 				id, proc->pid);
+			decrease_degree_of_multiprogramming(proc);
 			put_proc(proc);
 			proc = get_proc();
 		}
@@ -88,12 +97,17 @@ static void * cpu_routine(void * args) {
 		}else if (time_left == 0) {
 			printf("\tCPU %d: Dispatched process %2d\n",
 				id, proc->pid);
+			increase_degree_of_multiprogramming(proc);
 			time_left = time_slot;
 		}
 		
 		/* Run current process */
 		printf("\tProcess %d run\n", proc->pid);
 		run(proc);
+		//print_list_rg(proc->mm->mmap->vm_freerg_list);
+		print_pgtbl(proc, proc->mm->mmap->vm_start, proc->mm->mmap->vm_end);
+		//print_list_pgn(proc->mm->fifo_pgn);
+		//printf("%d\n", proc->mram->free_fp_list->fpn);
 		time_left--;
 		next_slot(timer_id);
 	}
@@ -249,6 +263,11 @@ int main(int argc, char * argv[]) {
 
 	/* Init scheduler */
 	init_scheduler();
+	init_degree_of_multiprogramming();
+
+	/* Init memphy lock*/
+	init_memphy_lock();
+	init_phy_lock();
 
 	/* Run CPU and loader */
 #ifdef MM_PAGING

@@ -1,4 +1,5 @@
-1 8
+1 7
+calc
 alloc 300 0
 alloc 100 1
 free 0

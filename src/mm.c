@@ -7,6 +7,130 @@
 #include "mm.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <pthread.h>
+
+static int degree_of_multiprogramming;
+static int max_number_of_ram_frames_proc;
+static struct proc_ram_frm_node * num_ram_frames_list = NULL;
+pthread_mutex_t degree_lock;
+
+void init_degree_of_multiprogramming() {
+  pthread_mutex_init(&degree_lock, 0);
+  degree_of_multiprogramming = 0;
+}
+
+void enlist_num_ram_frames(struct pcb_t * caller, int numframe) {
+  //TODO: change to find and plus if not then enlist
+  if(num_ram_frames_list == NULL) {
+    num_ram_frames_list = malloc(sizeof(struct proc_ram_frm_node));
+    num_ram_frames_list->pcb = caller;
+    num_ram_frames_list->num_ram_frames = numframe;
+    num_ram_frames_list->next = NULL;
+  }
+  else {
+    struct proc_ram_frm_node * p = malloc(sizeof(struct proc_ram_frm_node));
+    p->pcb = caller;
+    p->num_ram_frames = numframe;
+    p->next = num_ram_frames_list;
+    num_ram_frames_list = p;
+  }
+}
+
+void update_num_ram_frames (struct pcb_t * caller, int numframe) {
+  pthread_mutex_lock(&degree_lock);
+  struct proc_ram_frm_node * pn = num_ram_frames_list;
+  while(pn != NULL) {
+    if(pn->pcb == caller) {
+      pn->num_ram_frames += numframe;
+      if(pn->num_ram_frames > max_number_of_ram_frames_proc) 
+        pn->num_ram_frames = max_number_of_ram_frames_proc;
+      pthread_mutex_unlock(&degree_lock);
+      return;
+    }
+    pn = pn->next;
+  }
+  pthread_mutex_unlock(&degree_lock);
+}
+
+int remain_num_ram_frame (struct pcb_t * caller) {
+  pthread_mutex_lock(&degree_lock);
+  
+  struct proc_ram_frm_node * pn = num_ram_frames_list;
+  while(pn != NULL) {
+    if(pn->pcb == caller) {
+      pthread_mutex_unlock(&degree_lock);
+      return max_number_of_ram_frames_proc - pn->num_ram_frames;
+    }
+    pn = pn->next;
+  }
+  pthread_mutex_unlock(&degree_lock);
+  return -10;
+}
+
+void detach_ram_frame_node(struct pcb_t * caller) {
+  //TODO
+  struct proc_ram_frm_node * pn = num_ram_frames_list;
+  if(pn->next == NULL && pn->pcb == caller) {
+    num_ram_frames_list = NULL;
+    free(pn);
+
+    return;
+  }
+  while(pn->next != NULL) {
+    if(pn->next->pcb == caller) {
+      struct proc_ram_frm_node * p = pn->next;
+      pn->next = p->next;
+      free(p);
+    }
+
+    return;
+  }
+  return;
+}
+
+int increase_degree_of_multiprogramming(struct pcb_t * caller) {
+  pthread_mutex_lock(&degree_lock);
+  degree_of_multiprogramming ++;
+  max_number_of_ram_frames_proc = DIV_ROUND_UP(caller->mram->maxsz, PAGING_PAGESZ) / degree_of_multiprogramming;
+  enlist_num_ram_frames(caller, 0);
+  //TODO: check and page out pages of the process that exceed
+  struct proc_ram_frm_node * p = num_ram_frames_list;
+  while(p != NULL) {
+    if(p->num_ram_frames > max_number_of_ram_frames_proc) {
+      int num_need_swap = p->num_ram_frames - max_number_of_ram_frames_proc;
+      for(int i = 0; i < num_need_swap; i++) {
+        int swpfpn, vicpgn;
+        if(MEMPHY_get_freefp(caller->active_mswp, &swpfpn) == 0) {
+          find_victim_page(p->pcb->mm, &vicpgn);
+          int vicfpn = GETVAL(p->pcb->mm->pgd[vicpgn], PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
+          __swap_cp_page(p->pcb->mram, vicfpn, caller->active_mswp ,swpfpn, NULL);
+          pte_set_swap(&p->pcb->mm->pgd[vicpgn], 0, swpfpn);
+          MEMPHY_put_freefp(p->pcb->mram, vicfpn);
+        }
+      }
+    }
+
+    p = p->next;
+  }
+  pthread_mutex_unlock(&degree_lock);
+
+  return 0;
+}
+
+int decrease_degree_of_multiprogramming(struct pcb_t * caller) {
+  pthread_mutex_lock(&degree_lock);
+  degree_of_multiprogramming --;
+  if(degree_of_multiprogramming == 0) {
+    max_number_of_ram_frames_proc = DIV_ROUND_UP(caller->mram->maxsz, PAGING_PAGESZ);
+  }
+  else {
+    max_number_of_ram_frames_proc = DIV_ROUND_UP(caller->mram->maxsz, PAGING_PAGESZ) / degree_of_multiprogramming;
+  }
+  detach_ram_frame_node(caller);
+  pthread_mutex_unlock(&degree_lock);
+
+  return 0;
+}
 
 /* 
  * init_pte - Initialize PTE entry
@@ -21,8 +145,8 @@ int init_pte(uint32_t *pte,
 {
   if (pre != 0) {
     if (swp == 0) { // Non swap ~ page online
-      if (fpn == 0) 
-        return -1; // Invalid setting
+      //if (fpn == 0) 
+        //return -1; // Invalid setting
 
       /* Valid setting with FPN */
       SETBIT(*pte, PAGING_PTE_PRESENT_MASK);
@@ -51,7 +175,7 @@ int init_pte(uint32_t *pte,
  */
 int pte_set_swap(uint32_t *pte, int swptyp, int swpoff)
 {
-  SETBIT(*pte, PAGING_PTE_PRESENT_MASK);
+  CLRBIT(*pte, PAGING_PTE_PRESENT_MASK);
   SETBIT(*pte, PAGING_PTE_SWAPPED_MASK);
 
   SETVAL(*pte, swptyp, PAGING_PTE_SWPTYP_MASK, PAGING_PTE_SWPTYP_LOBIT);
@@ -86,24 +210,31 @@ int vmap_page_range(struct pcb_t *caller, // process call
               struct vm_rg_struct *ret_rg)// return mapped region, the real mapped fp
 {                                         // no guarantee all given pages are mapped
   //uint32_t * pte = malloc(sizeof(uint32_t));
-  struct framephy_struct *fpit = malloc(sizeof(struct framephy_struct));
+  //print_list_fp(frames);
   //int  fpn;
   int pgit = 0;
   int pgn = PAGING_PGN(addr);
 
   ret_rg->rg_end = ret_rg->rg_start = addr; // at least the very first space is usable
 
-  fpit->fp_next = frames;
 
   /* TODO map range of frame to address space 
    *      [addr to addr + pgnum*PAGING_PAGESZ
    *      in page table caller->mm->pgd[]
    */
+  struct framephy_struct * p = frames;
+  uint32_t * table = caller->mm->pgd;
+  for(pgit = 0; pgit < pgnum; pgit++) {
+    if(init_pte(&table[pgn+pgit], 1, p->fpn, 0, 0, 0, 0) == 0) {
+      struct framephy_struct * clr = p;
+      p = p->fp_next;
+      free(clr);
+    }
 
    /* Tracking for later page replacement activities (if needed)
     * Enqueue new usage page */
-   enlist_pgn_node(&caller->mm->fifo_pgn, pgn+pgit);
-
+    enlist_fifo_pgn_node(caller, pgn+pgit);
+  }
 
   return 0;
 }
@@ -117,17 +248,56 @@ int vmap_page_range(struct pcb_t *caller, // process call
 
 int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struct** frm_lst)
 {
+  if(req_pgnum > max_number_of_ram_frames_proc) {
+    return -3000;
+  }
+  
   int pgit, fpn;
-  //struct framephy_struct *newfp_str;
+  int swpfpn;
+  struct framephy_struct *newfp_str;
 
   for(pgit = 0; pgit < req_pgnum; pgit++)
   {
-    if(MEMPHY_get_freefp(caller->mram, &fpn) == 0)
-   {
-     
-   } else {  // ERROR CODE of obtaining somes but not enough frames
-   } 
+    if(remain_num_ram_frame(caller) > 0 && MEMPHY_get_freefp(caller->mram, &fpn) == 0)
+    {
+      if(*frm_lst == NULL) {
+        *frm_lst = malloc(sizeof(struct framephy_struct));
+        (*frm_lst)->fpn = fpn;
+        (*frm_lst)->fp_next = NULL;
+        newfp_str = *frm_lst;
+      }
+      else {
+        newfp_str->fp_next = malloc(sizeof(struct framephy_struct));
+        newfp_str = newfp_str->fp_next;
+        newfp_str->fpn = fpn;
+        newfp_str->fp_next = NULL;
+      }
+      update_num_ram_frames(caller, 1);
+    } 
+    else if (MEMPHY_get_freefp(caller->active_mswp, &swpfpn) == 0){  // ERROR CODE of obtaining somes but not enough frames
+      int vicpgn;
+      find_victim_page(caller->mm, &vicpgn);
+      int vicfpn = GETVAL(caller->mm->pgd[vicpgn], PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
+      __swap_cp_page(caller->mram, vicfpn, caller->active_mswp ,swpfpn, NULL);
+      pte_set_swap(&caller->mm->pgd[vicpgn], 0, swpfpn);
+      if(*frm_lst == NULL) {
+        *frm_lst = malloc(sizeof(struct framephy_struct));
+        (*frm_lst)->fpn = vicfpn;
+        (*frm_lst)->fp_next = NULL;
+        newfp_str = *frm_lst;
+      }
+      else {
+        newfp_str->fp_next = malloc(sizeof(struct framephy_struct));
+        newfp_str = newfp_str->fp_next;
+        newfp_str->fpn = vicfpn;
+        newfp_str->fp_next = NULL;
+      }
+    }
+    else {
+      return -3000;
+    } 
  }
+  //print_list_fp()
 
   return 0;
 }
@@ -182,19 +352,20 @@ int vm_map_ram(struct pcb_t *caller, int astart, int aend, int mapstart, int inc
  * @dstfpn : destination physical page number (FPN)
  **/
 int __swap_cp_page(struct memphy_struct *mpsrc, int srcfpn,
-                struct memphy_struct *mpdst, int dstfpn) 
+                struct memphy_struct *mpdst, int dstfpn, struct pgn_t * p) 
 {
   int cellidx;
   int addrsrc,addrdst;
+  BYTE * data = malloc(sizeof(BYTE));
   for(cellidx = 0; cellidx < PAGING_PAGESZ; cellidx++)
   {
     addrsrc = srcfpn * PAGING_PAGESZ + cellidx;
     addrdst = dstfpn * PAGING_PAGESZ + cellidx;
 
-    BYTE data;
-    MEMPHY_read(mpsrc, addrsrc, &data);
-    MEMPHY_write(mpdst, addrdst, data);
+    MEMPHY_read(mpsrc, addrsrc, data);
+    MEMPHY_write(mpdst, addrdst, *data);
   }
+  free(data);
 
   return 0;
 }
@@ -223,6 +394,8 @@ int init_mm(struct mm_struct *mm, struct pcb_t *caller)
 
   mm->mmap = vma;
 
+  mm->fifo_pgn = NULL;
+
   return 0;
 }
 
@@ -247,11 +420,46 @@ int enlist_vm_rg_node(struct vm_rg_struct **rglist, struct vm_rg_struct* rgnode)
 
 int enlist_pgn_node(struct pgn_t **plist, int pgn)
 {
-  struct pgn_t* pnode = malloc(sizeof(struct pgn_t));
+  if(*plist == NULL) {
+    (*plist) = malloc(sizeof(struct pgn_t));
+    (*plist)->pgn = pgn;
+    (*plist)->pg_next = NULL;
+    printf("enlist head %d\n", (*plist)->pgn);
+    printf("%p\n", *plist);
+    print_list_pgn(*plist);
+    return 0;
+  }
+  else {
+    struct pgn_t * p = *plist;
+    while(p->pg_next != NULL) p = p->pg_next;
+    p->pg_next = malloc(sizeof(struct pgn_t));
+    p->pg_next->pgn = pgn;
+    p->pg_next->pg_next = NULL;
+    printf("enlist %d\n", p->pg_next->pgn);
+    printf("%p\n", *plist);
+    print_list_pgn(*plist);
+  }
 
-  pnode->pgn = pgn;
-  pnode->pg_next = *plist;
-  *plist = pnode;
+  return 0;
+}
+
+int enlist_fifo_pgn_node(struct pcb_t * caller, int pgn)
+{
+  if(caller->mm->fifo_pgn == NULL) {
+    caller->mm->fifo_pgn = malloc(sizeof(struct pgn_t));
+    caller->mm->fifo_pgn->pgn = pgn;
+    caller->mm->fifo_pgn->pg_next = NULL;
+    return 0;
+  }
+  else {
+    struct pgn_t * p = caller->mm->fifo_pgn;
+    while(p->pg_next != NULL) p = p->pg_next;
+    p->pg_next = malloc(sizeof(struct pgn_t));
+    p = p->pg_next;
+    p->pgn = pgn;
+    p->pg_next = NULL;
+    p = NULL;
+  }
 
   return 0;
 }
@@ -314,7 +522,7 @@ int print_list_pgn(struct pgn_t *ip)
        printf("va[%d]-\n",ip->pgn);
        ip = ip->pg_next;
    }
-   printf("n");
+   printf("\n");
    return 0;
 }
 

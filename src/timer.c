@@ -19,8 +19,8 @@ static int timer_stop = 0;
 
 
 static void * timer_routine(void * args) {
+	printf("Time slot %3lu\n", current_time());
 	while (!timer_stop) {
-		printf("Time slot %3lu\n", current_time());
 		int fsh = 0;
 		int event = 0;
 		/* Wait for all devices have done the job in current
@@ -43,6 +43,7 @@ static void * timer_routine(void * args) {
 
 		/* Increase the time slot */
 		_time++;
+		printf("Time slot %3lu\n", current_time());
 		
 		/* Let devices continue their job */
 		for (temp = dev_list; temp != NULL; temp = temp->next) {

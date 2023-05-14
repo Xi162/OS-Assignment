@@ -1,7 +1,7 @@
 #ifndef OSMM_H
 #define OSMM_H
 
-//#define MM_PAGING
+#define MM_PAGING
 #define PAGING_MAX_MMSWP 4 /* max number of supported swapped space */
 #define PAGING_MAX_SYMTBL_SZ 30
 
@@ -80,6 +80,12 @@ struct memphy_struct {
    /* Management structure */
    struct framephy_struct *free_fp_list;
    struct framephy_struct *used_fp_list;
+};
+
+struct proc_ram_frm_node {
+   struct pcb_t * pcb;
+   int num_ram_frames;
+   struct proc_ram_frm_node * next;
 };
 
 #endif

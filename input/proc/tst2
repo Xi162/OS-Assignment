@@ -1,0 +1,7 @@
+0 6
+alloc 400 0
+alloc 400 1
+write 100 0 10
+read 0 10 4
+free 0
+free 1
