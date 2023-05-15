@@ -98,6 +98,7 @@
 
 /* Degree of multiprogramming */
 void init_degree_of_multiprogramming();
+void check_exceed_page ();
 int increase_degree_of_multiprogramming(struct pcb_t * caller);
 int decrease_degree_of_multiprogramming(struct pcb_t * caller);
 void update_num_ram_frames (struct pcb_t * caller, int numframe);
@@ -117,7 +118,7 @@ int vmap_page_range(struct pcb_t *caller, int addr, int pgnum,
 int vm_map_ram(struct pcb_t *caller, int astart, int send, int mapstart, int incpgnum, struct vm_rg_struct *ret_rg);
 int alloc_pages_range(struct pcb_t *caller, int incpgnum, struct framephy_struct **frm_lst);
 int __swap_cp_page(struct memphy_struct *mpsrc, int srcfpn,
-                struct memphy_struct *mpdst, int dstfpn, struct pgn_t * p) ;
+                struct memphy_struct *mpdst, int dstfpn) ;
 int pte_set_fpn(uint32_t *pte, int fpn);
 int pte_set_swap(uint32_t *pte, int swptyp, int swpoff);
 int init_pte(uint32_t *pte,

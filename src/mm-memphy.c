@@ -211,7 +211,6 @@ int init_memphy(struct memphy_struct *mp, int max_size, int randomflg)
 {
    mp->storage = (BYTE *)malloc(max_size*sizeof(BYTE));
    mp->maxsz = max_size;
-   //pthread_mutex_init(&mp->lock, NULL);
 
    MEMPHY_format(mp,PAGING_PAGESZ);
 

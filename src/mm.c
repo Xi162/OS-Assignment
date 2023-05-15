@@ -42,8 +42,6 @@ void update_num_ram_frames (struct pcb_t * caller, int numframe) {
   while(pn != NULL) {
     if(pn->pcb == caller) {
       pn->num_ram_frames += numframe;
-      if(pn->num_ram_frames > max_number_of_ram_frames_proc) 
-        pn->num_ram_frames = max_number_of_ram_frames_proc;
       pthread_mutex_unlock(&degree_lock);
       return;
     }
@@ -82,9 +80,37 @@ void detach_ram_frame_node(struct pcb_t * caller) {
       pn->next = p->next;
       free(p);
     }
+    pn = pn->next;
 
     return;
   }
+  return;
+}
+
+void check_exceed_page () {
+  pthread_mutex_lock(&degree_lock);
+  struct proc_ram_frm_node * p = num_ram_frames_list;
+  while(p != NULL) {
+    printf("Checking process %d\n", p->pcb->pid);
+    if(p->num_ram_frames > max_number_of_ram_frames_proc) {
+      int num_need_swap = p->num_ram_frames - max_number_of_ram_frames_proc;
+      for(int i = 0; i < num_need_swap; i++) {
+        int swpfpn, vicpgn;
+        if(MEMPHY_get_freefp(p->pcb->active_mswp, &swpfpn) == 0) {
+          find_victim_page(p->pcb->mm, &vicpgn);
+          int vicfpn = GETVAL(p->pcb->mm->pgd[vicpgn], PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
+          __swap_cp_page(p->pcb->mram, vicfpn, p->pcb->active_mswp ,swpfpn);
+          pte_set_swap(&p->pcb->mm->pgd[vicpgn], 0, swpfpn);
+          MEMPHY_put_freefp(p->pcb->mram, vicfpn);
+          p->num_ram_frames--;
+        }
+      }
+    }
+
+    p = p->next;
+  }
+  pthread_mutex_unlock(&degree_lock);
+
   return;
 }
 
@@ -103,9 +129,10 @@ int increase_degree_of_multiprogramming(struct pcb_t * caller) {
         if(MEMPHY_get_freefp(caller->active_mswp, &swpfpn) == 0) {
           find_victim_page(p->pcb->mm, &vicpgn);
           int vicfpn = GETVAL(p->pcb->mm->pgd[vicpgn], PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
-          __swap_cp_page(p->pcb->mram, vicfpn, caller->active_mswp ,swpfpn, NULL);
+          __swap_cp_page(p->pcb->mram, vicfpn, caller->active_mswp ,swpfpn);
           pte_set_swap(&p->pcb->mm->pgd[vicpgn], 0, swpfpn);
           MEMPHY_put_freefp(p->pcb->mram, vicfpn);
+          p->num_ram_frames--;
         }
       }
     }
@@ -149,6 +176,7 @@ int init_pte(uint32_t *pte,
         //return -1; // Invalid setting
 
       /* Valid setting with FPN */
+      *pte = 0;
       SETBIT(*pte, PAGING_PTE_PRESENT_MASK);
       CLRBIT(*pte, PAGING_PTE_SWAPPED_MASK);
       CLRBIT(*pte, PAGING_PTE_DIRTY_MASK);
@@ -175,6 +203,7 @@ int init_pte(uint32_t *pte,
  */
 int pte_set_swap(uint32_t *pte, int swptyp, int swpoff)
 {
+  *pte = 0;
   CLRBIT(*pte, PAGING_PTE_PRESENT_MASK);
   SETBIT(*pte, PAGING_PTE_SWAPPED_MASK);
 
@@ -191,6 +220,7 @@ int pte_set_swap(uint32_t *pte, int swptyp, int swpoff)
  */
 int pte_set_fpn(uint32_t *pte, int fpn)
 {
+  *pte = 0;
   SETBIT(*pte, PAGING_PTE_PRESENT_MASK);
   CLRBIT(*pte, PAGING_PTE_SWAPPED_MASK);
 
@@ -278,7 +308,7 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
       int vicpgn;
       find_victim_page(caller->mm, &vicpgn);
       int vicfpn = GETVAL(caller->mm->pgd[vicpgn], PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
-      __swap_cp_page(caller->mram, vicfpn, caller->active_mswp ,swpfpn, NULL);
+      __swap_cp_page(caller->mram, vicfpn, caller->active_mswp ,swpfpn);
       pte_set_swap(&caller->mm->pgd[vicpgn], 0, swpfpn);
       if(*frm_lst == NULL) {
         *frm_lst = malloc(sizeof(struct framephy_struct));
@@ -352,20 +382,20 @@ int vm_map_ram(struct pcb_t *caller, int astart, int aend, int mapstart, int inc
  * @dstfpn : destination physical page number (FPN)
  **/
 int __swap_cp_page(struct memphy_struct *mpsrc, int srcfpn,
-                struct memphy_struct *mpdst, int dstfpn, struct pgn_t * p) 
+                struct memphy_struct *mpdst, int dstfpn) 
 {
   int cellidx;
   int addrsrc,addrdst;
-  BYTE * data = malloc(sizeof(BYTE));
+  BYTE data;
   for(cellidx = 0; cellidx < PAGING_PAGESZ; cellidx++)
   {
     addrsrc = srcfpn * PAGING_PAGESZ + cellidx;
     addrdst = dstfpn * PAGING_PAGESZ + cellidx;
 
-    MEMPHY_read(mpsrc, addrsrc, data);
-    MEMPHY_write(mpdst, addrdst, *data);
+    MEMPHY_read(mpsrc, addrsrc, &data);
+    MEMPHY_write(mpdst, addrdst, data);
   }
-  free(data);
+
 
   return 0;
 }
