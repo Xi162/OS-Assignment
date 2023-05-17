@@ -16,7 +16,7 @@ static uint64_t _time;
 
 static int timer_started = 0;
 static int timer_stop = 0;
-
+pthread_mutex_t timer_stop_locked;
 
 static void * timer_routine(void * args) {
 	printf("Time slot %3lu\n", current_time());
@@ -83,6 +83,7 @@ uint64_t current_time() {
 
 void start_timer() {
 	timer_started = 1;
+	pthread_mutex_init(&timer_stop_locked, 0);
 	pthread_create(&_timer, NULL, timer_routine, NULL);
 }
 

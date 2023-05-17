@@ -96,6 +96,11 @@
 #define INCLUDE(x1,x2,y1,y2) (((y1-x1)*(x2-y2)>=0)?1:0)
 #define OVERLAP(x1,x2,y1,y2) (((y2-x1)*(x2-y1)>=0)?1:0)
 
+/* Head lock*/
+void init_head_lock();
+void head_lock();
+void head_unlock();
+
 /* Degree of multiprogramming */
 void init_degree_of_multiprogramming();
 void check_exceed_page ();
@@ -162,8 +167,10 @@ int MEMPHY_get_freefp(struct memphy_struct *mp, int *fpn);
 int MEMPHY_put_freefp(struct memphy_struct *mp, int fpn);
 int MEMPHY_read(struct memphy_struct * mp, int addr, BYTE *value);
 int MEMPHY_write(struct memphy_struct * mp, int addr, BYTE data);
+int MEMPHY_swap(struct memphy_struct * src, int srcfpn, struct memphy_struct * dst, int dstfpn);
 int MEMPHY_dump(struct memphy_struct * mp);
 int init_memphy(struct memphy_struct *mp, int max_size, int randomflg);
+void release_memphy (struct memphy_struct * mp);
 /* DEBUG */
 int print_list_fp(struct framephy_struct *fp);
 int print_list_rg(struct vm_rg_struct *rg);

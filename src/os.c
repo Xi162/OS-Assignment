@@ -15,6 +15,9 @@ static int time_slot;
 static int num_cpus;
 static int done = 0;
 
+static int * cpu_lock = NULL;
+pthread_mutex_t pgtb_print;
+
 #ifdef MM_PAGING
 static int memramsz;
 static int memswpsz[PAGING_MAX_MMSWP];
@@ -51,22 +54,20 @@ static void * cpu_routine(void * args) {
 	struct pcb_t * proc = NULL;
 	while (1) {
 		/* Check the status of current process */
+		cpu_lock[id] = 0;
 		if (proc == NULL) {
 			/* No process is running, the we load new process from
 		 	* ready queue */
 			proc = get_proc();
-			if (proc == NULL) {
-				//printf("Hello\n");
-                next_slot(timer_id);
-                continue; /* First load failed. skip dummy load */
-            }
 		}else if (proc->pc == proc->code->size) {
 			/* The porcess has finish it job */
 			printf("\tCPU %d: Processed %2d has finished\n",
 				id ,proc->pid);
-			decrease_degree_of_multiprogramming(proc);
 #ifdef MM_PAGING
+			head_lock();
+			decrease_degree_of_multiprogramming(proc);
 			free_pcb_memph(proc);
+			head_unlock();
 #endif
 			free(proc);
 			proc = get_proc();
@@ -74,12 +75,14 @@ static void * cpu_routine(void * args) {
 		}else if (time_left == 0) {
 			/* The process has done its job in current time slot */
  #ifdef MM_PAGING
+			head_lock();
  			swap_pcb_memph(proc);
+			decrease_degree_of_multiprogramming(proc);
+			head_unlock();
  #endif
  			//print_pgtbl(proc, proc->mm->mmap->vm_start, proc->mm->mmap->vm_end);
 			printf("\tCPU %d: Put process %2d to run queue\n",
 				id, proc->pid);
-			decrease_degree_of_multiprogramming(proc);
 			put_proc(proc);
 			proc = get_proc();
 		}
@@ -88,27 +91,40 @@ static void * cpu_routine(void * args) {
 		if (proc == NULL && done) {
 			/* No process to run, exit */
 			printf("\tCPU %d stopped\n", id);
+			cpu_lock[id] = 1;
 			break;
 		}else if (proc == NULL) {
 			/* There may be new processes to run in
 			 * next time slots, just skip current slot */
+			cpu_lock[id] = 1;
 			next_slot(timer_id);
 			continue;
 		}else if (time_left == 0) {
 			printf("\tCPU %d: Dispatched process %2d\n",
 				id, proc->pid);
+			head_lock();
 			increase_degree_of_multiprogramming(proc);
+			head_unlock();
 			time_left = time_slot;
 		}
-		
+
+		check_exceed_page();
+
+		cpu_lock[id] = 1;
+		for(int i = 0; i < num_cpus; i++) {
+			while(!cpu_lock[i]);
+		}
 		/* Run current process */
 		printf("\tProcess %d run\n", proc->pid);
 		run(proc);
 		//print_list_rg(proc->mm->mmap->vm_freerg_list);
+		pthread_mutex_lock(&pgtb_print);
 		print_pgtbl(proc, proc->mm->mmap->vm_start, proc->mm->mmap->vm_end);
+		pthread_mutex_unlock(&pgtb_print);
 		//print_list_pgn(proc->mm->fifo_pgn);
 		//printf("%d\n", proc->mram->free_fp_list->fpn);
 		time_left--;
+		cpu_lock[id] = 0;
 		next_slot(timer_id);
 	}
 	detach_event(timer_id);
@@ -235,6 +251,9 @@ int main(int argc, char * argv[]) {
 	struct timer_id_t * ld_event = attach_event();
 	start_timer();
 
+	/* Init locks */
+	cpu_lock = malloc(num_cpus * sizeof(int));
+
 #ifdef MM_PAGING
 	/* Init all MEMPHY include 1 MEMRAM and n of MEMSWP */
 	int rdmflag = 1; /* By default memphy is RANDOM ACCESS MEMORY */
@@ -263,7 +282,9 @@ int main(int argc, char * argv[]) {
 
 	/* Init scheduler */
 	init_scheduler();
+	init_head_lock();
 	init_degree_of_multiprogramming();
+	pthread_mutex_init(&pgtb_print, 0);
 
 	/* Init memphy lock*/
 	init_memphy_lock();
@@ -289,6 +310,12 @@ int main(int argc, char * argv[]) {
 	/* Stop timer */
 	stop_timer();
 
+	free(cpu_lock);
+	
+#ifdef MM_PAGING
+	release_memphy(&mswp[0]);
+	//release_memphy(&mram);
+#endif
 	return 0;
 
 }

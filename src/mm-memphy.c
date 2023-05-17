@@ -78,6 +78,24 @@ int MEMPHY_read(struct memphy_struct * mp, int addr, BYTE *value)
    return 0;
 }
 
+int MEMPHY_swap(struct memphy_struct * src, int srcfpn, struct memphy_struct * dst, int dstfpn) {
+   pthread_mutex_lock(&phy_lock);
+      int cellidx;
+      int addrsrc,addrdst;
+      BYTE data;
+      for(cellidx = 0; cellidx < PAGING_PAGESZ; cellidx++)
+      {
+         addrsrc = srcfpn * PAGING_PAGESZ + cellidx;
+         addrdst = dstfpn * PAGING_PAGESZ + cellidx;
+
+         data = src->storage[addrsrc];
+         dst->storage[addrdst] = data;
+      }
+
+   pthread_mutex_unlock(&phy_lock);
+   return 0;
+}
+
 /*
  *  MEMPHY_seq_write - write MEMPHY device
  *  @mp: memphy struct
@@ -220,6 +238,17 @@ int init_memphy(struct memphy_struct *mp, int max_size, int randomflg)
       mp->cursor = 0;
 
    return 0;
+}
+
+void release_memphy (struct memphy_struct * mp) {
+   free(mp->storage);
+   struct framephy_struct * p = mp->free_fp_list;
+   while(p != NULL) {
+      struct framephy_struct * clr = p;
+      p = p->fp_next;
+      free(clr);
+   }
+   return;
 }
 
 //#endif

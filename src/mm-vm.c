@@ -99,9 +99,8 @@ int __alloc(struct pcb_t *caller, int vmaid, int rgid, int size, int *alloc_addr
   }
 
   /* TODO get_free_vmrg_area FAILED handle the region management (Fig.6)*/
-  pthread_mutex_lock(&memphy_lock);
   /*Attempt to increate limit to get space */
-  check_exceed_page();
+  pthread_mutex_lock(&memphy_lock);
   struct vm_area_struct *cur_vma = get_vma_by_num(caller->mm, vmaid);
   int inc_sz = PAGING_PAGE_ALIGNSZ(size);
   //int inc_limit_ret
@@ -198,7 +197,7 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
   { /* Page is not online, make it actively living */
     if(remain_num_ram_frame(caller) > 0 && MEMPHY_get_freefp(caller->mram, fpn) == 0) {
       int tgtfpn = GETVAL(pte, PAGING_PTE_SWPOFF_MASK, PAGING_PTE_SWPOFF_LOBIT);//the target frame storing our variable
-      __swap_cp_page(caller->active_mswp, tgtfpn, caller->mram, *fpn);
+      MEMPHY_swap(caller->active_mswp, tgtfpn, caller->mram, *fpn);
       MEMPHY_put_freefp(caller->active_mswp, tgtfpn);
       pte_set_fpn(&mm->pgd[pgn], *fpn);
       update_num_ram_frames(caller, 1);
@@ -222,10 +221,11 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
     int vicfpn = GETVAL(caller->mm->pgd[vicpgn], PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
     /* Do swap frame from MEMRAM to MEMSWP and vice versa*/
     /* Copy victim frame to swap */
-    __swap_cp_page(caller->mram, vicfpn, caller->active_mswp ,swpfpn);
+    MEMPHY_swap(caller->mram, vicfpn, caller->active_mswp ,swpfpn);
     /* Copy target frame from swap to mem */
-    __swap_cp_page(caller->active_mswp, tgtfpn, caller->mram, vicpgn);
+    MEMPHY_swap(caller->active_mswp, tgtfpn, caller->mram, vicpgn);
     MEMPHY_put_freefp(caller->active_mswp, tgtfpn);
+    printf("%d\n", caller->mm->fifo_pgn->pgn);
 
 
     /* Update page table */
@@ -307,7 +307,6 @@ int __read(struct pcb_t *caller, int vmaid, int rgid, int offset, BYTE *data)
 	  return -1;
 
   pthread_mutex_lock(&memphy_lock);
-  check_exceed_page();
   pg_getval(caller->mm, currg->rg_start + offset, data, caller);
   pthread_mutex_unlock(&memphy_lock);
 
@@ -349,7 +348,6 @@ int __write(struct pcb_t *caller, int vmaid, int rgid, int offset, BYTE value)
 	  return -1;
 
   pthread_mutex_lock(&memphy_lock);
-  check_exceed_page();
   pg_setval(caller->mm, currg->rg_start + offset, value, caller);
   pthread_mutex_unlock(&memphy_lock);
 
@@ -419,7 +417,7 @@ int swap_pcb_memph(struct pcb_t *caller)
     {
       fpn = GETVAL(pte, PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
       if(MEMPHY_get_freefp(caller->active_mswp, &swpfpn) == 0) {
-        __swap_cp_page(caller->mram, fpn, caller->active_mswp, swpfpn);
+        MEMPHY_swap(caller->mram, fpn, caller->active_mswp, swpfpn);
         pte_set_swap(&caller->mm->pgd[pagenum], 0, swpfpn);
         MEMPHY_put_freefp(caller->mram, fpn);
       }

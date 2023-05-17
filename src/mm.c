@@ -9,6 +9,20 @@
 #include <stdio.h>
 #include <pthread.h>
 
+pthread_mutex_t head_locked;
+
+void init_head_lock () {
+  pthread_mutex_init(&head_locked, 0);
+}
+
+void head_lock() {
+  pthread_mutex_lock(&head_locked);
+}
+
+void head_unlock() {
+  pthread_mutex_unlock(&head_locked);
+}
+
 static int degree_of_multiprogramming;
 static int max_number_of_ram_frames_proc;
 static struct proc_ram_frm_node * num_ram_frames_list = NULL;
@@ -88,10 +102,10 @@ void detach_ram_frame_node(struct pcb_t * caller) {
 }
 
 void check_exceed_page () {
+  head_lock();
   pthread_mutex_lock(&degree_lock);
   struct proc_ram_frm_node * p = num_ram_frames_list;
   while(p != NULL) {
-    printf("Checking process %d\n", p->pcb->pid);
     if(p->num_ram_frames > max_number_of_ram_frames_proc) {
       int num_need_swap = p->num_ram_frames - max_number_of_ram_frames_proc;
       for(int i = 0; i < num_need_swap; i++) {
@@ -99,7 +113,7 @@ void check_exceed_page () {
         if(MEMPHY_get_freefp(p->pcb->active_mswp, &swpfpn) == 0) {
           find_victim_page(p->pcb->mm, &vicpgn);
           int vicfpn = GETVAL(p->pcb->mm->pgd[vicpgn], PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
-          __swap_cp_page(p->pcb->mram, vicfpn, p->pcb->active_mswp ,swpfpn);
+          MEMPHY_swap(p->pcb->mram, vicfpn, p->pcb->active_mswp ,swpfpn);
           pte_set_swap(&p->pcb->mm->pgd[vicpgn], 0, swpfpn);
           MEMPHY_put_freefp(p->pcb->mram, vicfpn);
           p->num_ram_frames--;
@@ -110,6 +124,7 @@ void check_exceed_page () {
     p = p->next;
   }
   pthread_mutex_unlock(&degree_lock);
+  head_unlock();
 
   return;
 }
@@ -129,7 +144,7 @@ int increase_degree_of_multiprogramming(struct pcb_t * caller) {
         if(MEMPHY_get_freefp(caller->active_mswp, &swpfpn) == 0) {
           find_victim_page(p->pcb->mm, &vicpgn);
           int vicfpn = GETVAL(p->pcb->mm->pgd[vicpgn], PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
-          __swap_cp_page(p->pcb->mram, vicfpn, caller->active_mswp ,swpfpn);
+          MEMPHY_swap(p->pcb->mram, vicfpn, caller->active_mswp ,swpfpn);
           pte_set_swap(&p->pcb->mm->pgd[vicpgn], 0, swpfpn);
           MEMPHY_put_freefp(p->pcb->mram, vicfpn);
           p->num_ram_frames--;
@@ -308,7 +323,7 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
       int vicpgn;
       find_victim_page(caller->mm, &vicpgn);
       int vicfpn = GETVAL(caller->mm->pgd[vicpgn], PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
-      __swap_cp_page(caller->mram, vicfpn, caller->active_mswp ,swpfpn);
+      MEMPHY_swap(caller->mram, vicfpn, caller->active_mswp ,swpfpn);
       pte_set_swap(&caller->mm->pgd[vicpgn], 0, swpfpn);
       if(*frm_lst == NULL) {
         *frm_lst = malloc(sizeof(struct framephy_struct));
@@ -569,7 +584,7 @@ int print_pgtbl(struct pcb_t *caller, uint32_t start, uint32_t end)
   pgn_start = PAGING_PGN(start);
   pgn_end = PAGING_PGN(end);
 
-  printf("print_pgtbl: %d - %d", start, end);
+  printf("print_pgtbl of process %d: %d - %d", caller->pid, start, end);
   if (caller == NULL) {printf("NULL caller\n"); return -1;}
     printf("\n");
 
