@@ -471,7 +471,6 @@ int enlist_pgn_node(struct pgn_t **plist, int pgn)
     (*plist)->pg_next = NULL;
     printf("enlist head %d\n", (*plist)->pgn);
     printf("%p\n", *plist);
-    print_list_pgn(*plist);
     return 0;
   }
   else {
@@ -482,7 +481,6 @@ int enlist_pgn_node(struct pgn_t **plist, int pgn)
     p->pg_next->pg_next = NULL;
     printf("enlist %d\n", p->pg_next->pgn);
     printf("%p\n", *plist);
-    print_list_pgn(*plist);
   }
 
   return 0;
@@ -557,9 +555,9 @@ int print_list_vma(struct vm_area_struct *ivma)
    return 0;
 }
 
-int print_list_pgn(struct pgn_t *ip)
+int print_list_pgn(struct pcb_t * caller ,struct pgn_t *ip)
 {
-   printf("print_list_pgn: ");
+   printf("print_list_pgn of process %d: ", caller->pid);
    if (ip == NULL) {printf("NULL list\n"); return -1;}
    printf("\n");
    while (ip != NULL )

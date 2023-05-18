@@ -108,7 +108,7 @@ static void * cpu_routine(void * args) {
 			time_left = time_slot;
 		}
 
-		check_exceed_page();
+		//check_exceed_page();
 
 		cpu_lock[id] = 1;
 		for(int i = 0; i < num_cpus; i++) {
@@ -120,11 +120,12 @@ static void * cpu_routine(void * args) {
 		//print_list_rg(proc->mm->mmap->vm_freerg_list);
 		pthread_mutex_lock(&pgtb_print);
 		print_pgtbl(proc, proc->mm->mmap->vm_start, proc->mm->mmap->vm_end);
+		print_list_pgn(proc, proc->mm->fifo_pgn);
 		pthread_mutex_unlock(&pgtb_print);
 		//print_list_pgn(proc->mm->fifo_pgn);
 		//printf("%d\n", proc->mram->free_fp_list->fpn);
 		time_left--;
-		cpu_lock[id] = 0;
+		//cpu_lock[id] = 0;
 		next_slot(timer_id);
 	}
 	detach_event(timer_id);
@@ -159,7 +160,9 @@ static void * ld_routine(void * args) {
 #endif
 		printf("\tLoaded a process at %s, PID: %d PRIO: %ld\n",
 			ld_processes.path[i], proc->pid, ld_processes.prio[i]);
+		head_lock();
 		add_proc(proc);
+		head_unlock();
 		free(ld_processes.path[i]);
 		i++;
 		next_slot(timer_id);

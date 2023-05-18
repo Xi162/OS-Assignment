@@ -225,7 +225,6 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
     /* Copy target frame from swap to mem */
     MEMPHY_swap(caller->active_mswp, tgtfpn, caller->mram, vicpgn);
     MEMPHY_put_freefp(caller->active_mswp, tgtfpn);
-    printf("%d\n", caller->mm->fifo_pgn->pgn);
 
 
     /* Update page table */
